@@ -19,14 +19,15 @@ public class JwtService {
     @Value("${app.jwt.expiration-ms}")
     private long expirationMs;
 
+    @Value("${app.jwt.refresh-expiration-ms}")
+    private long refreshExpirationMs;
+
     public String generateToken(String userId, String email) {
-        return Jwts.builder()
-                .setSubject(userId)
-                .claim("email", email)
-                .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis() + expirationMs))
-                .signWith(getKey(), SignatureAlgorithm.HS256)
-                .compact();
+        return buildToken(userId, email, expirationMs, "access");
+    }
+
+    public String generateRefreshToken(String userId, String email) {
+        return buildToken(userId, email, refreshExpirationMs, "refresh");
     }
 
     public String extractUserId(String token) {
@@ -43,6 +44,25 @@ public class JwtService {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    public boolean isRefreshToken(String token) {
+        try {
+            return "refresh".equals(getClaims(token).get("type", String.class));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private String buildToken(String userId, String email, long expiry, String type) {
+        return Jwts.builder()
+                .setSubject(userId)
+                .claim("email", email)
+                .claim("type", type)
+                .setIssuedAt(new Date())
+                .setExpiration(new Date(System.currentTimeMillis() + expiry))
+                .signWith(getKey(), SignatureAlgorithm.HS256)
+                .compact();
     }
 
     private Claims getClaims(String token) {

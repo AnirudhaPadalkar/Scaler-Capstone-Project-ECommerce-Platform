@@ -8,11 +8,19 @@ spring:
     hibernate:
       ddl-auto: create-drop
     database-platform: org.hibernate.dialect.H2Dialect
-  h2:
-    console:
-      enabled: false
+  mail:
+    host: localhost
+    port: 3025
+    username: test
+    password: test
 
 app:
   jwt:
     secret: test-secret-key-min-32-chars-long-xx
     expiration-ms: 3600000
+    refresh-expiration-ms: 86400000
+  mail:
+    from: noreply@test.com
+    base-url: http://localhost:8080
+  password-reset:
+    expiration-minutes: 30
