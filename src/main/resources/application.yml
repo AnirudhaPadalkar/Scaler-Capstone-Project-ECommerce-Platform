@@ -11,18 +11,16 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQLDialect
-        format_sql: true
+  elasticsearch:
+    uris: ${ES_URI:http://localhost:9200}
   mail:
     host: ${MAIL_HOST:smtp.gmail.com}
     port: ${MAIL_PORT:587}
     username: ${MAIL_USERNAME:}
     password: ${MAIL_PASSWORD:}
     properties:
-      mail:
-        smtp:
-          auth: true
-          starttls:
-            enable: true
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
 
 server:
   port: 8080
@@ -36,9 +34,4 @@ app:
     from: ${MAIL_FROM:noreply@ecomm.com}
     base-url: ${APP_BASE_URL:http://localhost:8080}
   password-reset:
-    expiration-minutes: ${PASSWORD_RESET_EXPIRY_MIN:30}
-
-logging:
-  level:
-    com.example.ecomm: INFO
-    org.springframework.security: WARN
+    expiration-minutes: 30
