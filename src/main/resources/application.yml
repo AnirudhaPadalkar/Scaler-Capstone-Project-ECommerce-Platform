@@ -11,6 +11,12 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQLDialect
+  data:
+    mongodb:
+      uri: ${MONGO_URI:mongodb://localhost:27017/ecomm_cart}
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
   elasticsearch:
     uris: ${ES_URI:http://localhost:9200}
   mail:
@@ -35,3 +41,5 @@ app:
     base-url: ${APP_BASE_URL:http://localhost:8080}
   password-reset:
     expiration-minutes: 30
+  cart:
+    ttl-hours: 24
