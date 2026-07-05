@@ -1,8 +1,13 @@
 package com.example.ecomm.shared.exception;
 
+import com.example.ecomm.cart.exception.CartException;
+import com.example.ecomm.order.exception.OrderNotFoundException;
+import com.example.ecomm.payment.exception.PaymentException;
+import com.example.ecomm.product.exception.ProductNotFoundException;
 import com.example.ecomm.user.exception.InvalidTokenException;
 import com.example.ecomm.user.exception.UserAlreadyExistsException;
 import com.example.ecomm.user.exception.UserNotFoundException;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -15,54 +20,59 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(UserAlreadyExistsException.class)
-    public ResponseEntity<ErrorResponse> handleUserAlreadyExists(UserAlreadyExistsException ex) {
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(new ErrorResponse(ex.getMessage(), HttpStatus.CONFLICT.value()));
+    public ResponseEntity<ErrorResponse> handleConflict(UserAlreadyExistsException ex) {
+        return error(HttpStatus.CONFLICT, ex.getMessage());
     }
 
-    @ExceptionHandler(UserNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleUserNotFound(UserNotFoundException ex) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(new ErrorResponse(ex.getMessage(), HttpStatus.NOT_FOUND.value()));
+    @ExceptionHandler({UserNotFoundException.class, ProductNotFoundException.class, OrderNotFoundException.class})
+    public ResponseEntity<ErrorResponse> handleNotFound(RuntimeException ex) {
+        return error(HttpStatus.NOT_FOUND, ex.getMessage());
     }
 
-    @ExceptionHandler(InvalidTokenException.class)
-    public ResponseEntity<ErrorResponse> handleInvalidToken(InvalidTokenException ex) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(new ErrorResponse(ex.getMessage(), HttpStatus.BAD_REQUEST.value()));
+    @ExceptionHandler({InvalidTokenException.class, CartException.class})
+    public ResponseEntity<ErrorResponse> handleBadRequest(RuntimeException ex) {
+        return error(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    @ExceptionHandler(PaymentException.class)
+    public ResponseEntity<ErrorResponse> handlePayment(PaymentException ex) {
+        return error(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
     }
 
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<ErrorResponse> handleBadCredentials(BadCredentialsException ex) {
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(new ErrorResponse("Invalid credentials", HttpStatus.UNAUTHORIZED.value()));
+        return error(HttpStatus.UNAUTHORIZED, "Invalid credentials");
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex) {
-        Map<String, String> errors = new HashMap<>();
-        ex.getBindingResult().getAllErrors().forEach(error -> {
-            String field = ((FieldError) error).getField();
-            errors.put(field, error.getDefaultMessage());
+        Map<String, String> fields = new HashMap<>();
+        ex.getBindingResult().getAllErrors().forEach(e -> {
+            String field = ((FieldError) e).getField();
+            fields.put(field, e.getDefaultMessage());
         });
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
-                .body(new ErrorResponse("Validation failed", HttpStatus.UNPROCESSABLE_ENTITY.value(), errors));
+                .body(new ErrorResponse("Validation failed", HttpStatus.UNPROCESSABLE_ENTITY.value(), fields));
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneric(Exception ex) {
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(new ErrorResponse("Internal server error", HttpStatus.INTERNAL_SERVER_ERROR.value()));
+        // Never leak internal details in production
+        log.error("Unhandled exception", ex);
+        return error(HttpStatus.INTERNAL_SERVER_ERROR, "Internal server error");
+    }
+
+    private ResponseEntity<ErrorResponse> error(HttpStatus status, String message) {
+        return ResponseEntity.status(status)
+                .body(new ErrorResponse(message, status.value(), null));
     }
 
     public record ErrorResponse(String message, int status, Object details, LocalDateTime timestamp) {
-        public ErrorResponse(String message, int status) {
-            this(message, status, null, LocalDateTime.now());
-        }
         public ErrorResponse(String message, int status, Object details) {
             this(message, status, details, LocalDateTime.now());
         }

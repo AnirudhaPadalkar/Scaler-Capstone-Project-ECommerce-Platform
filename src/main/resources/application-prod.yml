@@ -1,0 +1,19 @@
+spring:
+  jpa:
+    show-sql: false
+    hibernate:
+      ddl-auto: validate      # Never auto-migrate in production
+
+logging:
+  level:
+    com.example.ecomm: INFO
+    org.springframework.security: WARN
+    org.hibernate: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] [%X{requestId}] %-5level %logger{36} - %msg%n"
+
+server:
+  error:
+    include-message: never    # Never expose exception messages
+    include-stacktrace: never
+    include-binding-errors: never
