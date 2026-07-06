@@ -16,15 +16,17 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class PaymentServiceImpl implements PaymentService {
 
-    private final PaymentRepository     paymentRepository;
-    private final OrderRepository       orderRepository;
+    private final PaymentRepository      paymentRepository;
+    private final OrderRepository        orderRepository;
     private final PaymentStrategyFactory strategyFactory;
-    private final OrderServiceImpl      orderService;
+    private final OrderServiceImpl       orderService;
 
     @Override
     @Transactional
@@ -32,14 +34,26 @@ public class PaymentServiceImpl implements PaymentService {
         Order order = orderRepository.findById(request.getOrderId())
                 .orElseThrow(() -> new PaymentException("Order not found: " + request.getOrderId()));
 
-        // Select payment strategy based on order's payment method
-        var strategy       = strategyFactory.getStrategy(order.getPaymentMethod());
-        String gwOrderId   = strategy.initiatePayment(order.getId(), request.getAmount(), "INR");
+        // FIX: validate requested amount matches order total
+        if (request.getAmount().compareTo(order.getTotal()) != 0) {
+            throw new PaymentException(
+                "Payment amount mismatch. Expected: " + order.getTotal() +
+                ", Received: " + request.getAmount()
+            );
+        }
+
+        // Guard: reject if payment already initiated for this order
+        paymentRepository.findByOrderId(order.getId()).ifPresent(existing -> {
+            throw new PaymentException("Payment already initiated for order: " + order.getId());
+        });
+
+        var strategy     = strategyFactory.getStrategy(order.getPaymentMethod());
+        String gwOrderId = strategy.initiatePayment(order.getId(), order.getTotal(), "INR");
 
         Payment payment = Payment.builder()
                 .orderId(order.getId())
                 .userId(userId)
-                .amount(request.getAmount())
+                .amount(order.getTotal())          // always use order total, not client value
                 .currency("INR")
                 .status(PaymentStatus.PENDING)
                 .gateway(order.getPaymentMethod())
@@ -47,8 +61,7 @@ public class PaymentServiceImpl implements PaymentService {
                 .build();
 
         Payment saved = paymentRepository.save(payment);
-        log.info("Payment initiated: paymentId={} orderId={}", saved.getId(), order.getId());
-
+        log.info("Payment initiated: paymentId={} orderId={} amount={}", saved.getId(), order.getId(), order.getTotal());
         return toDto(saved);
     }
 
@@ -72,7 +85,6 @@ public class PaymentServiceImpl implements PaymentService {
         payment.setGatewayPaymentId(request.getGatewayPaymentId());
         Payment saved = paymentRepository.save(payment);
 
-        // Trigger order confirmation
         orderService.confirmOrder(request.getOrderId());
 
         log.info("Payment confirmed: paymentId={} orderId={}", saved.getId(), request.getOrderId());

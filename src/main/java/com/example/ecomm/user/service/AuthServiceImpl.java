@@ -29,17 +29,30 @@ import java.time.LocalDateTime;
 import java.util.HexFormat;
 import java.util.UUID;
 
+/**
+ * C8 fix: EmailListenerService calls removed from this class.
+ *
+ * Previously, AuthServiceImpl was directly calling emailService.sendWelcome()
+ * AND publishing UserRegisteredEvent — causing duplicate emails on registration.
+ *
+ * Correct pattern (Observer):
+ *   AuthServiceImpl  →  publishes UserRegisteredEvent
+ *   UserNotificationListener (C6)  →  @EventListener → sends welcome email
+ *
+ * AuthServiceImpl has no knowledge of email. It only publishes events.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
 
-    private final UserRepository             userRepository;
+    private final UserRepository               userRepository;
     private final PasswordResetTokenRepository resetTokenRepository;
-    private final UserSessionRepository      sessionRepository;
-    private final PasswordEncoder            passwordEncoder;
-    private final JwtService                 jwtService;
-    private final ApplicationEventPublisher  eventPublisher;
+    private final UserSessionRepository        sessionRepository;
+    private final PasswordEncoder              passwordEncoder;
+    private final JwtService                   jwtService;
+    private final ApplicationEventPublisher    eventPublisher;
+    // FIX: EmailListenerService dependency removed — no direct email calls here
 
     @Value("${app.password-reset.expiration-minutes}")
     private int resetExpiryMinutes;
@@ -62,6 +75,7 @@ public class AuthServiceImpl implements AuthService {
 
         User saved = userRepository.save(user);
 
+        // Publish event only — UserNotificationListener handles the email
         eventPublisher.publishEvent(
                 new UserRegisteredEvent(this, saved.getId(), saved.getEmail(), saved.getFirstName())
         );
@@ -109,8 +123,6 @@ public class AuthServiceImpl implements AuthService {
         }
 
         User user = session.getUser();
-
-        // Rotate — delete old, issue new
         sessionRepository.delete(session);
 
         String newAccess  = jwtService.generateToken(user.getId(), user.getEmail());
@@ -138,7 +150,7 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public void forgotPassword(ForgotPasswordRequestDto request) {
-        // Always return success — prevent email enumeration
+        // Silent on unknown email — prevents enumeration
         userRepository.findByEmailAndActiveTrue(request.getEmail().toLowerCase())
                 .ifPresent(user -> {
                     resetTokenRepository.invalidateAllForUser(user.getId());
@@ -153,6 +165,7 @@ public class AuthServiceImpl implements AuthService {
                             .used(false)
                             .build());
 
+                    // Publish event only — UserNotificationListener handles the email
                     eventPublisher.publishEvent(
                             new PasswordResetRequestedEvent(this, user.getEmail(), user.getFirstName(), rawToken)
                     );
@@ -181,8 +194,6 @@ public class AuthServiceImpl implements AuthService {
 
         resetToken.setUsed(true);
         resetTokenRepository.save(resetToken);
-
-        // Invalidate all sessions
         sessionRepository.deleteAllByUserId(user.getId());
 
         log.info("Password reset completed for user: {}", user.getId());

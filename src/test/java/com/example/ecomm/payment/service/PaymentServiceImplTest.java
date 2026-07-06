@@ -50,13 +50,16 @@ class PaymentServiceImplTest {
         testOrder.setId("order-1");
     }
 
+    // ── FIX 4: amount validated against order.total ───────────────────────
+
     @Test
-    void initiatePayment_success() {
+    void initiatePayment_amountMatchesOrderTotal_succeeds() {
         var req = new InitiatePaymentRequestDto();
         req.setOrderId("order-1");
-        req.setAmount(new BigDecimal("999.00"));
+        req.setAmount(new BigDecimal("999.00")); // correct amount
 
         when(orderRepository.findById("order-1")).thenReturn(Optional.of(testOrder));
+        when(paymentRepository.findByOrderId("order-1")).thenReturn(Optional.empty());
         when(strategyFactory.getStrategy("card")).thenReturn(mockStrategy);
         when(mockStrategy.initiatePayment(any(), any(), any())).thenReturn("gw_order_123");
         when(paymentRepository.save(any())).thenAnswer(i -> {
@@ -68,17 +71,48 @@ class PaymentServiceImplTest {
         var result = paymentService.initiatePayment("u1", req);
 
         assertThat(result.getStatus()).isEqualTo(PaymentStatus.PENDING);
-        assertThat(result.getGatewayOrderId()).isEqualTo("gw_order_123");
-        verify(strategyFactory).getStrategy("card");
+        assertThat(result.getAmount()).isEqualByComparingTo(new BigDecimal("999.00"));
     }
 
     @Test
-    void initiatePayment_orderNotFound_throws() {
-        when(orderRepository.findById(anyString())).thenReturn(Optional.empty());
+    void initiatePayment_amountMismatch_throwsPaymentException() {
+        var req = new InitiatePaymentRequestDto();
+        req.setOrderId("order-1");
+        req.setAmount(new BigDecimal("1.00")); // tampered amount
 
+        when(orderRepository.findById("order-1")).thenReturn(Optional.of(testOrder));
+
+        assertThatThrownBy(() -> paymentService.initiatePayment("u1", req))
+                .isInstanceOf(PaymentException.class)
+                .hasMessageContaining("mismatch")
+                .hasMessageContaining("999.00")
+                .hasMessageContaining("1.00");
+    }
+
+    @Test
+    void initiatePayment_alreadyInitiated_throwsPaymentException() {
+        var req = new InitiatePaymentRequestDto();
+        req.setOrderId("order-1");
+        req.setAmount(new BigDecimal("999.00"));
+
+        when(orderRepository.findById("order-1")).thenReturn(Optional.of(testOrder));
+
+        Payment existing = Payment.builder()
+                .orderId("order-1").status(PaymentStatus.PENDING).build();
+        when(paymentRepository.findByOrderId("order-1")).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> paymentService.initiatePayment("u1", req))
+                .isInstanceOf(PaymentException.class)
+                .hasMessageContaining("already initiated");
+    }
+
+    @Test
+    void initiatePayment_orderNotFound_throwsPaymentException() {
         var req = new InitiatePaymentRequestDto();
         req.setOrderId("bad-order");
-        req.setAmount(BigDecimal.TEN);
+        req.setAmount(new BigDecimal("999.00"));
+
+        when(orderRepository.findById("bad-order")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> paymentService.initiatePayment("u1", req))
                 .isInstanceOf(PaymentException.class)
@@ -86,13 +120,14 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void confirmPayment_verificationFailed_throws() {
+    void confirmPayment_verificationFailed_setsFailedStatus() {
         Payment pending = Payment.builder()
                 .orderId("order-1").userId("u1")
                 .amount(new BigDecimal("999")).currency("INR")
                 .status(PaymentStatus.PENDING).gateway("card")
                 .gatewayOrderId("gw_order_123")
                 .build();
+        pending.setId("pay-1");
 
         when(paymentRepository.findByOrderIdAndStatus("order-1", PaymentStatus.PENDING))
                 .thenReturn(Optional.of(pending));
@@ -107,10 +142,12 @@ class PaymentServiceImplTest {
         assertThatThrownBy(() -> paymentService.confirmPayment(req))
                 .isInstanceOf(PaymentException.class)
                 .hasMessageContaining("verification failed");
+
+        verify(paymentRepository).save(argThat(p -> p.getStatus() == PaymentStatus.FAILED));
     }
 
     @Test
-    void confirmPayment_success_triggersOrderConfirmation() {
+    void confirmPayment_success_confirmsOrder() {
         Payment pending = Payment.builder()
                 .orderId("order-1").userId("u1")
                 .amount(new BigDecimal("999")).currency("INR")

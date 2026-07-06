@@ -1,22 +1,18 @@
 package com.example.ecomm.cart.dto;
 
-import jakarta.validation.constraints.*;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
-import java.math.BigDecimal;
-
+/**
+ * C8 fix: price removed — fetched from ProductRepository in CartServiceImpl.
+ * Clients no longer supply price; doing so would allow price manipulation.
+ */
 @Data
 public class AddItemRequestDto {
 
     @NotBlank(message = "Product ID is required")
     private String productId;
-
-    @NotBlank(message = "Product name is required")
-    private String productName;
-
-    @NotNull(message = "Price is required")
-    @DecimalMin(value = "0.0", inclusive = false)
-    private BigDecimal price;
 
     @Min(value = 1, message = "Quantity must be at least 1")
     private int quantity;
